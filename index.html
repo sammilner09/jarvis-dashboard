@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>J.A.R.V.I.S.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600&family=Rajdhani:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<!-- =====================================================================
+     BRIEFING DATA - edit this block to update what Jarvis shows and reads.
+     sections[].items[].text  = what appears on screen and is spoken.
+     sections[].items[].due   = optional ISO date (YYYY-MM-DD) for a countdown.
+     ===================================================================== -->
+<script type="application/json" id="briefing-data">
+{
+  "updated": "2026-11-23",
+  "owner": "Sir",
+  "sections": [
+    {
+      "title": "Today",
+      "accent": "cyan",
+      "items": [
+        {
+          "text": "Morning briefing is ready when you are"
+        },
+        {
+          "text": "Sample reminder \u2014 replace this with your own items",
+          "due": "2026-12-15"
+        }
+      ]
+    },
+    {
+      "title": "Notices",
+      "accent": "amber",
+      "items": [
+        {
+          "text": "This dashboard is using placeholder sample text. Add your briefing items here."
+        }
+      ]
+    }
+  ],
+  "phoneAlerts": "Call line: setting up"
+}
+</script>
+
+<style>
+:root{
+  --cyan:#00FFFF; --cyan2:#4DD0E1; --amber:#FFB300; --amber2:#FF9800;
+  --ok:#00E676; --bad:#FF3D57;
+  --glass:rgba(0,30,40,.35); --line:rgba(0,255,255,.55);
+  --font:'Orbitron','Rajdhani',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+  --font2:'Rajdhani','Orbitron',ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;color:var(--cyan2);overflow:hidden;
+  font-family:var(--font2);text-transform:uppercase;letter-spacing:.12em;font-weight:300;
+  -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+body{background:radial-gradient(ellipse at center,#06141a 0%,#020607 55%,#000 100%)}
+/* faint hex + dot grid */
+#grid{position:fixed;inset:0;pointer-events:none;opacity:.5;
+  background-image:
+    radial-gradient(rgba(0,255,255,.18) 1px,transparent 1.4px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'%3E%3Cpath d='M28 0L56 16.2V48.5L28 64.7L0 48.5V16.2Z M28 64.7V97' fill='none' stroke='%2300ffff' stroke-opacity='.07' stroke-width='1'/%3E%3C/svg%3E");
+  background-size:22px 22px,56px 97px;
+  -webkit-mask-image:radial-gradient(ellipse at center,#000 30%,transparent 85%);
+          mask-image:radial-gradient(ellipse at center,#000 30%,transparent 85%)}
+#scan{position:fixed;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,255,255,.025) 0 1px,transparent 1px 3px)}
+
+#stage{position:fixed;inset:0;perspective:1400px;perspective-origin:50% 50%}
+#ui{position:absolute;inset:0;display:grid;
+  grid-template-columns:minmax(250px,1fr) minmax(320px,1.35fr) minmax(260px,1fr);
+  grid-template-rows:auto minmax(0,1fr) auto;gap:18px;padding:18px 22px calc(26px + env(safe-area-inset-bottom));
+  transform-style:preserve-3d;transition:transform .25s ease-out;will-change:transform}
+
+header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-family:var(--font);font-weight:500;letter-spacing:.45em;color:var(--cyan);
+  text-shadow:0 0 10px rgba(0,255,255,.7);font-size:15px}
+.brand small{display:block;font-size:9px;letter-spacing:.3em;color:var(--cyan2);opacity:.7;font-weight:400}
+.status{display:flex;gap:14px;font-size:11px;align-items:center}
+.pill{border:1px solid var(--line);border-radius:999px;padding:4px 10px;background:var(--glass)}
+.pill.amber{border-color:rgba(255,179,0,.6);color:var(--amber)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-right:6px;
+  box-shadow:0 0 8px var(--amber);animation:blink 1.4s infinite}
+.dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+@keyframes blink{50%{opacity:.25}}
+
+.panel{position:relative;border:1.5px solid var(--line);border-radius:14px;background:var(--glass);
+  -webkit-backdrop-filter:blur(10px) saturate(140%);backdrop-filter:blur(10px) saturate(140%);
+  box-shadow:0 0 18px rgba(0,255,255,.12),inset 0 0 22px rgba(0,255,255,.06);
+  padding:14px 16px;overflow:hidden;transform-origin:center;transform:translateZ(40px) scale(.6);opacity:0}
+.panel::before,.panel::after{content:"";position:absolute;width:16px;height:16px;border:2px solid var(--cyan)}
+.panel::before{top:-1px;left:-1px;border-right:0;border-bottom:0;border-top-left-radius:14px}
+.panel::after{bottom:-1px;right:-1px;border-left:0;border-top:0;border-bottom-right-radius:14px}
+.booted .panel:not(#toast){animation:pop .45s cubic-bezier(.16,1,.3,1) forwards}
+.booted .panel:nth-of-type(2){animation-delay:.08s}
+.booted .panel:nth-of-type(3){animation-delay:.16s}
+@keyframes pop{0%{opacity:0;transform:translateZ(40px) scale(.6)}70%{opacity:1}100%{opacity:1;transform:translateZ(40px) scale(1)}}
+.ph{font-family:var(--font);font-size:11px;letter-spacing:.3em;color:var(--cyan);font-weight:500;
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;
+  border-bottom:1px solid rgba(0,255,255,.25);padding-bottom:7px}
+.ph span:last-child{color:var(--amber);font-size:9px}
+
+#left{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:18px;min-height:0;transform-style:preserve-3d}
+#right{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:18px;min-height:0;transform-style:preserve-3d;overflow:auto}
+#logsPanel{flex:1;min-height:0;display:flex;flex-direction:column}
+#logs{flex:1;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.55;
+  letter-spacing:.04em;color:var(--cyan2);display:flex;flex-direction:column;justify-content:flex-end}
+#logs div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#logs .t{color:rgba(0,255,255,.45)} #logs .a{color:var(--amber)}
+#camPanel{display:none;height:190px;padding:8px}
+#camPanel.on{display:block}
+#cam{width:100%;height:100%;object-fit:cover;border-radius:9px;transform:scaleX(-1);filter:saturate(.2) sepia(1) hue-rotate(140deg) brightness(.9) contrast(1.2);opacity:.85}
+
+#center{grid-column:2;grid-row:2;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;transform:translateZ(80px)}
+#reticle{width:min(100%,62vh);aspect-ratio:1;filter:drop-shadow(0 0 6px rgba(0,255,255,.6))}
+#reticle g{transform-origin:250px 250px;transform-box:view-box}
+.r1{animation:spin 30s linear infinite}.r2{animation:spin 18s linear infinite reverse}
+.r3{animation:spin 11s linear infinite}.r4{animation:spin 42s linear infinite reverse}
+.r5{animation:spin 7s linear infinite reverse}.r6{animation:spin 24s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.boot-fast g{animation-duration:1.2s!important}
+#core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;text-align:center}
+#coreTitle{font-family:var(--font);font-size:clamp(16px,2.6vw,28px);font-weight:500;color:var(--cyan);letter-spacing:.5em;
+  text-shadow:0 0 14px var(--cyan);margin-left:.5em}
+#coreSub{font-size:11px;color:var(--amber);letter-spacing:.35em;margin-top:8px;min-height:1.4em}
+#coreGlow{position:absolute;width:18%;aspect-ratio:1;border-radius:50%;
+  background:radial-gradient(circle,rgba(0,255,255,.55),rgba(0,255,255,.05) 60%,transparent 70%);animation:breath 3s ease-in-out infinite}
+@keyframes breath{50%{transform:scale(1.18);opacity:.7}}
+#wave{position:absolute;bottom:6%;width:46%;height:34px}
+
+.clock{font-family:var(--font);font-size:clamp(28px,3.4vw,42px);color:var(--cyan);font-weight:400;letter-spacing:.12em;
+  text-shadow:0 0 12px rgba(0,255,255,.7)}
+.clock small{font-size:.38em;color:var(--amber);margin-left:6px}
+.date{font-size:12px;letter-spacing:.25em;margin-top:4px}
+.tz{font-size:9px;opacity:.6;margin-top:2px}
+.sec{margin-top:10px}
+.sec h4{font-family:var(--font);font-size:10px;font-weight:500;letter-spacing:.25em;margin-bottom:6px;color:var(--cyan)}
+.sec.amber h4{color:var(--amber)}
+.item{display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.3;letter-spacing:.06em;font-weight:400;
+  padding:6px 8px;margin-bottom:5px;border-left:2px solid var(--cyan2);background:rgba(0,255,255,.04);border-radius:0 6px 6px 0}
+.sec.amber .item{border-left-color:var(--amber)}
+.item .due{margin-left:auto;white-space:nowrap;font-family:var(--font);font-size:9px;color:var(--amber);padding-top:2px}
+.phone{margin-top:10px;font-size:11px;color:var(--amber)}
+#briefPanel.expanded,.holo #briefPanel{box-shadow:0 0 30px rgba(0,255,255,.3),inset 0 0 22px rgba(0,255,255,.1)}
+
+.holo #ui{gap:26px}
+.holo .panel{border-color:var(--cyan);box-shadow:0 0 34px rgba(0,255,255,.35),inset 0 0 30px rgba(0,255,255,.1)}
+.holo #reticle{width:min(100%,70vh)}
+
+#dock{grid-column:1/-1;grid-row:3;display:flex;justify-content:center;gap:16px;transform:translateZ(20px);padding-bottom:6px;flex-wrap:wrap}
+.btn{width:58px;height:58px;border-radius:50%;border:1.5px solid var(--line);background:var(--glass);color:var(--cyan);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);display:flex;flex-direction:column;align-items:center;justify-content:center;
+  cursor:pointer;transition:transform .15s,box-shadow .2s,border-color .2s;font-family:var(--font);font-size:7px;letter-spacing:.15em;gap:3px}
+.btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.5}
+.btn:hover,.btn.hover{transform:scale(1.1);box-shadow:0 0 16px rgba(0,255,255,.6)}
+.btn.active{border-color:var(--amber);color:var(--amber);box-shadow:0 0 16px rgba(255,179,0,.5)}
+.btn:active{transform:scale(.92)}
+
+/* boot overlay */
+#boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+  background:radial-gradient(circle,rgba(0,20,26,.6),#000 70%);cursor:pointer;transition:opacity .6s}
+#boot.hide{opacity:0;pointer-events:none}
+#boot h1{font-family:var(--font);font-weight:400;font-size:clamp(20px,5vw,40px);letter-spacing:.6em;color:var(--cyan);
+  text-shadow:0 0 18px var(--cyan);margin-left:.6em}
+#boot p{font-size:11px;letter-spacing:.35em;opacity:.7}
+#wake{font-family:var(--font);font-size:13px;letter-spacing:.4em;color:var(--cyan);padding:14px 30px 14px 36px;border-radius:999px;
+  border:1.5px solid var(--cyan);background:rgba(0,255,255,.06);cursor:pointer;box-shadow:0 0 20px rgba(0,255,255,.35);
+  animation:pulse 2s infinite}
+@keyframes pulse{50%{box-shadow:0 0 34px rgba(0,255,255,.7)}}
+#bootBar{width:min(70vw,360px);height:3px;background:rgba(0,255,255,.12);border-radius:2px;overflow:hidden;opacity:0}
+#bootBar i{display:block;height:100%;width:0;background:var(--cyan);box-shadow:0 0 10px var(--cyan);transition:width .2s}
+#bootLine{font-family:ui-monospace,Menlo,monospace;font-size:11px;min-height:1.4em;color:var(--cyan2);letter-spacing:.1em}
+
+/* confirm / cancel toast (green/red only here) */
+#toast{position:fixed;left:50%;top:70px;transform:translateX(-50%) scale(.8);opacity:0;z-index:40;pointer-events:none;
+  transition:all .25s cubic-bezier(.16,1,.3,1);padding:14px 18px;min-width:260px;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
+#toast .row{display:flex;gap:10px;justify-content:center;margin-top:10px}
+.ok,.no{font-family:var(--font);font-size:10px;letter-spacing:.2em;padding:8px 16px;border-radius:999px;background:transparent;cursor:pointer}
+.ok{border:1.5px solid var(--ok);color:var(--ok)} .no{border:1.5px solid var(--bad);color:var(--bad)}
+#toast.panel{opacity:0;transform:translateX(-50%) scale(.8)}
+#toast.panel.show{opacity:1;transform:translateX(-50%) scale(1)}
+
+/* hand cursor */
+#hand{position:fixed;left:0;top:0;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;z-index:60;pointer-events:none;
+  border:2px solid var(--cyan);box-shadow:0 0 14px var(--cyan),inset 0 0 8px var(--cyan);display:none;transition:width .12s,height .12s,margin .12s}
+#hand::after{content:"";position:absolute;inset:40%;border-radius:50%;background:var(--cyan)}
+#hand.on{display:block}
+#hand.pinch{width:16px;height:16px;margin:-8px 0 0 -8px;border-color:var(--amber);box-shadow:0 0 16px var(--amber)}
+
+/* phone / narrow */
+@media (max-width:820px){
+  html,body{overflow:auto}
+  #stage{position:relative;perspective:none}
+  #ui{position:relative;transform-style:flat;will-change:auto;display:flex;flex-direction:column;gap:14px;padding:14px 14px calc(100px + env(safe-area-inset-bottom));transform:none!important}
+  header{flex-wrap:wrap}
+  .status{font-size:9px;gap:6px;flex-wrap:wrap}
+  #left,#right{transform-style:flat}
+  #center{order:1;transform:none;margin:4px 0}
+  #reticle{width:min(84vw,360px)}
+  #right{order:2;overflow:visible}
+  #left{order:3}
+  #logsPanel{height:220px;flex:none}
+  #dock{position:fixed;left:0;right:0;bottom:0;padding:10px 8px calc(10px + env(safe-area-inset-bottom));gap:10px;
+    background:linear-gradient(transparent,rgba(0,0,0,.92) 35%);transform:none;z-index:30;flex-wrap:wrap}
+  .btn{width:50px;height:50px}
+  .panel:not(#toast){transform:scale(.6)}
+  @keyframes pop{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
+}
+@media (prefers-reduced-motion:reduce){#reticle g{animation-duration:120s!important}}
+
+/* ElevenLabs ConvAI widget — sits in the HUD, above the dock */
+elevenlabs-convai{
+  --elevenlabs-convai-widget-width: 360px;
+  --elevenlabs-convai-widget-height: 520px;
+  position:fixed;
+  right:18px;
+  bottom:88px;
+  z-index:45;
+  filter:drop-shadow(0 0 18px rgba(0,255,255,.28));
+}
+@media (max-width:820px){
+  elevenlabs-convai{
+    right:10px;
+    left:auto;
+    bottom:calc(92px + env(safe-area-inset-bottom));
+    --elevenlabs-convai-widget-width: min(360px, calc(100vw - 20px));
+  }
+}
+#bTalk.active, body.talking #bTalk{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 16px rgba(0,255,255,.6)}
+body.booted #center{cursor:pointer}
+body.talking #coreGlow{
+  background:radial-gradient(circle,rgba(0,255,255,.8),rgba(255,179,0,.2) 55%,transparent 72%);
+  animation:breath 1.2s ease-in-out infinite;
+}
+body.talking #coreSub, body.listening-call #coreSub, body.speaking-call #coreSub{color:var(--cyan)}
+body.listening-call #coreGlow{
+  background:radial-gradient(circle,rgba(0,255,255,.8),rgba(0,255,255,.12) 58%,transparent 72%);
+  animation:breath 1.05s ease-in-out infinite;
+}
+body.speaking-call #coreGlow{
+  background:radial-gradient(circle,rgba(255,179,0,.85),rgba(0,255,255,.15) 55%,transparent 72%);
+  animation:breath .8s ease-in-out infinite;
+}
+body.listening-call #reticle, body.speaking-call #reticle{filter:drop-shadow(0 0 14px rgba(0,255,255,.7))}
+body.speaking-call #reticle{filter:drop-shadow(0 0 14px rgba(255,179,0,.7))}
+elevenlabs-convai{display:none!important;width:0!important;height:0!important;overflow:hidden!important;pointer-events:none!important;opacity:0!important}
+#wakeHint{font-size:10px;letter-spacing:.22em;color:var(--cyan2);margin-top:8px;min-height:1.3em;opacity:.9;text-transform:uppercase}
+#micEnable{font-family:var(--font);font-size:13px;letter-spacing:.32em;color:#000;background:var(--cyan);border:0;border-radius:999px;
+  padding:16px 28px;cursor:pointer;box-shadow:0 0 22px rgba(0,255,255,.55);text-transform:uppercase}
+#micEnable.off{display:none}
+#boot #wakeHint{margin-top:4px}
+
+/* Briefing overlay */
+#briefPanel{cursor:pointer}
+#briefPanel:hover{box-shadow:0 0 22px rgba(0,255,255,.35),inset 0 0 22px rgba(0,255,255,.1)}
+#briefOverlay{position:fixed;inset:0;z-index:55;display:none;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at center,rgba(0,20,26,.82),rgba(0,0,0,.92) 70%);
+  padding:28px 22px calc(28px + env(safe-area-inset-bottom))}
+#briefOverlay.show{display:flex}
+#briefSheet{width:min(920px,96vw);max-height:min(88vh,900px);display:flex;flex-direction:column;
+  border:1.5px solid var(--line);border-radius:14px;background:rgba(0,16,22,.88);
+  -webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);
+  box-shadow:0 0 28px rgba(0,255,255,.2),inset 0 0 24px rgba(0,255,255,.06);
+  position:relative;overflow:hidden}
+#briefSheet::before,#briefSheet::after{content:"";position:absolute;width:16px;height:16px;border:2px solid var(--cyan)}
+#briefSheet::before{top:-1px;left:-1px;border-right:0;border-bottom:0;border-top-left-radius:14px}
+#briefSheet::after{bottom:-1px;right:-1px;border-left:0;border-top:0;border-bottom-right-radius:14px}
+#briefHead{display:flex;align-items:center;gap:12px;padding:14px 16px 12px;
+  border-bottom:1px solid rgba(0,255,255,.25);flex-shrink:0}
+#briefHead h2{font-family:var(--font);font-size:13px;letter-spacing:.35em;color:var(--cyan);font-weight:500;margin:0}
+#briefHead .upd{margin-left:auto;font-family:var(--font);font-size:9px;color:var(--amber);letter-spacing:.2em}
+#briefRead,#briefClose{font-family:var(--font);letter-spacing:.18em;text-transform:uppercase;cursor:pointer;
+  background:transparent;border-radius:999px}
+#briefRead{border:1.5px solid var(--line);color:var(--cyan);font-size:8px;padding:8px 14px}
+#briefRead:hover,#briefClose:hover{box-shadow:0 0 12px rgba(0,255,255,.45)}
+#briefClose{border:1.5px solid var(--line);color:var(--cyan);width:36px;height:36px;font-size:18px;line-height:1;padding:0}
+#briefBody{overflow:auto;padding:14px 16px 18px;min-height:0}
+#briefBody .sec{margin-bottom:16px}
+#briefBody .item{cursor:pointer}
+#briefBody .item .detail{display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,255,255,.15);
+  font-size:12px;letter-spacing:.08em;line-height:1.45;color:var(--cyan2);opacity:.9}
+#briefBody .item.open .detail{display:block}
+#briefBody .item.open{box-shadow:inset 0 0 12px rgba(0,255,255,.08)}
+#briefBody .phone{margin-top:8px}
+</style>
+</head>
+<body>
+<div id="grid"></div><div id="scan"></div>
+
+<div id="stage"><div id="ui">
+  <header>
+    <div class="brand">J.A.R.V.I.S.<small>Just a rather very intelligent system</small></div>
+    <div class="status">
+      <span class="pill"><span class="dot on"></span>Core online</span>
+      <span class="pill" id="micPill"><span class="dot" id="micDot"></span><span id="micTxt">Voice: standby</span></span>
+      <span class="pill amber" id="phonePill"><span class="dot"></span><span id="phoneTxt">Call line</span></span>
+    </div>
+  </header>
+
+  <section id="left">
+    <div class="panel" id="logsPanel">
+      <div class="ph"><span>System log</span><span id="logCount">00</span></div>
+      <div id="logs"></div>
+    </div>
+    <div class="panel" id="camPanel">
+      <video id="cam" playsinline muted autoplay></video>
+    </div>
+  </section>
+
+  <section id="center" title="Talk to Jarvis">
+    <svg id="reticle" viewBox="0 0 500 500" aria-hidden="true">
+      <defs>
+        <radialGradient id="rg"><stop offset="0" stop-color="#00ffff" stop-opacity=".12"/><stop offset="1" stop-color="#00ffff" stop-opacity="0"/></radialGradient>
+      </defs>
+      <circle cx="250" cy="250" r="240" fill="url(#rg)"/>
+      <g class="r1"><circle cx="250" cy="250" r="238" fill="none" stroke="#4DD0E1" stroke-opacity=".5" stroke-width="1"/>
+        <circle cx="250" cy="250" r="230" fill="none" stroke="#00FFFF" stroke-width="2" stroke-dasharray="2 10" stroke-opacity=".8"/></g>
+      <g class="r2"><circle cx="250" cy="250" r="212" fill="none" stroke="#00FFFF" stroke-width="6" stroke-dasharray="120 40 30 40 200 60 60 40" stroke-opacity=".75"/></g>
+      <g class="r3"><circle cx="250" cy="250" r="190" fill="none" stroke="#FFB300" stroke-width="3" stroke-dasharray="60 300 30 200 90 513" stroke-opacity=".9"/></g>
+      <g class="r4"><circle cx="250" cy="250" r="172" fill="none" stroke="#4DD0E1" stroke-width="14" stroke-dasharray="1.5 5" stroke-opacity=".55"/></g>
+      <g class="r6"><circle cx="250" cy="250" r="150" fill="none" stroke="#00FFFF" stroke-width="1.5" stroke-opacity=".9"/>
+        <path d="M250 96 v14 M250 390 v14 M96 250 h14 M390 250 h14" stroke="#00FFFF" stroke-width="2"/></g>
+      <g class="r5"><circle cx="250" cy="250" r="130" fill="none" stroke="#00FFFF" stroke-width="4" stroke-dasharray="180 24 60 24 120 24" stroke-opacity=".7"/></g>
+      <g class="r3"><circle cx="250" cy="250" r="108" fill="none" stroke="#FF9800" stroke-width="1.5" stroke-dasharray="8 6" stroke-opacity=".8"/></g>
+      <g class="r2"><circle cx="250" cy="250" r="92" fill="none" stroke="#00FFFF" stroke-width="2" stroke-opacity=".6"/></g>
+    </svg>
+    <div id="core">
+      <div id="coreGlow"></div>
+      <div id="coreTitle">JARVIS</div>
+      <div id="coreSub">Standby</div>
+      <div id="wakeHint">Say "Good evening, Jarvis"</div>
+    </div>
+    <canvas id="wave" width="400" height="40"></canvas>
+  </section>
+
+  <section id="right">
+    <div class="panel" id="clockPanel">
+      <div class="ph"><span>Chronometer</span><span>Central time</span></div>
+      <div class="clock" id="clock">--:--</div>
+      <div class="date" id="date"></div>
+    </div>
+    <div class="panel" id="briefPanel">
+      <div class="ph"><span>Briefing</span><span id="briefUpd"></span></div>
+      <div id="brief"></div>
+      <div class="phone" id="phoneLine"></div>
+    </div>
+  </section>
+
+  <nav id="dock">
+    <button class="btn" id="bWake" title="Wake up"><svg viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>Wake</button>
+    <button class="btn" id="bMic" title="Voice commands"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Voice</button>
+    <button class="btn" id="bTalk" title="Talk to Jarvis"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M5 12a7 7 0 0 1 2-4.9M19 12a7 7 0 0 0-2-4.9M3 12a9 9 0 0 1 2.6-6.4M21 12a9 9 0 0 0-2.6-6.4"/></svg>Talk</button>
+    <button class="btn" id="bBrief" title="Status report"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg>Report</button>
+    <button class="btn" id="bHolo" title="Holo desk (hand tracking)"><svg viewBox="0 0 24 24"><path d="M8 13V5a1.5 1.5 0 0 1 3 0v6M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3 14a1.5 1.5 0 0 1 2.5-1.6L8 15"/></svg>Holo</button>
+    <button class="btn" id="bMute" title="Mute voice"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path id="muteWave" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>Sound</button>
+  </nav>
+</div></div>
+
+
+<div id="briefOverlay" aria-hidden="true">
+  <div id="briefSheet" role="dialog" aria-label="Briefing">
+    <div id="briefHead">
+      <h2>Briefing</h2>
+      <span class="upd" id="briefOverlayUpd"></span>
+      <button type="button" id="briefRead" title="Read the briefing aloud">Read it to me</button>
+      <button type="button" id="briefClose" title="Close" aria-label="Close">×</button>
+    </div>
+    <div id="briefBody"></div>
+  </div>
+</div>
+
+<div id="toast" class="panel"><div id="toastMsg"></div><div class="row"><button class="ok" id="tOk">Confirm</button><button class="no" id="tNo">Cancel</button></div></div>
+<div id="hand"></div>
+
+<div id="boot">
+  <h1>JARVIS</h1>
+  <button id="wake">WAKE UP</button>
+  <div id="bootBar"><i></i></div>
+  <div id="bootLine"></div>
+  <p id="bootHint" class="wake-copy">Say "Good evening, Jarvis"</p>
+  <button type="button" id="micEnable">Tap to enable the microphone</button>
+  <button id="listenWake" class="pill" style="cursor:pointer;color:var(--cyan2);font:inherit;font-size:10px;letter-spacing:.25em;display:none">🎙 Listening</button>
+  <p>Or tap to wake</p>
+</div>
+
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const TZ = 'America/Chicago';
+const DATA = JSON.parse($('#briefing-data').textContent);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let booted = false, muted = false, audioCtx = null, pendingTalk = false, talking = false, pendingBriefing = false, pendingBriefingRead = false;
+
+function timeOfDay(){
+  const h = ctHour();
+  return h < 5 ? 'evening' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+}
+const AGENT_ID = 'agent_4401m85c56k5e35sy9be3b0evc72';
+const SILENCE_MS = 20000;
+let elSession = null, silenceTimer = null, holdForCall = false, startTalkBusy = false;
+
+function wakeHintText(){
+  const g = timeOfDay();
+  const phrase = g === 'morning' ? 'Good morning, Jarvis' : g === 'afternoon' ? 'Good afternoon, Jarvis' : 'Good evening, Jarvis';
+  return 'Say "' + phrase + '"';
+}
+function setWakeHint(){
+  const t = wakeHintText();
+  const a = $('#wakeHint'), b = $('#bootHint');
+  if (a) a.textContent = t;
+  if (b) b.textContent = t;
+}
+
+function looksLikeJarvis(s){
+  return /j[ae]?r?v[iey]+s\w*|javis|jarvice|jarvish|jarvies|jarvi\b/.test(s);
+}
+function isWakePhrase(s){
+  const c = ' ' + String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ') + ' ';
+  if (!looksLikeJarvis(c)) return false;
+  return /(good\s+(morning|afternoon|evening|night)|hello|hey|hi|wake(\s+up)?|ok)\b/.test(c) || /\bjarvi/.test(c);
+}
+function isGoodbye(s){
+  const c = String(s || '').toLowerCase();
+  return /\b(goodbye|good bye|good night|that'?s all|that is all|hang up|end (the |this )?call|go back to sleep|that'?s enough)\b/.test(c);
+}
+function msgText(msg){
+  if (!msg) return '';
+  if (typeof msg === 'string') return msg;
+  return msg.message || msg.text || msg.transcript || (msg.event && (msg.event.message || msg.event.text)) || '';
+}
+function msgSource(msg){
+  if (!msg || typeof msg === 'string') return 'user';
+  const s = (msg.source || msg.role || msg.sender || msg.type || '').toString().toLowerCase();
+  if (/agent|ai|assistant|bot/.test(s)) return 'agent';
+  return 'user';
+}
+
+function clearSilence(){ if (silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; } }
+function armSilence(){
+  clearSilence();
+  silenceTimer = setTimeout(() => { log('Ending session after silence'); endTalk('silence'); }, SILENCE_MS);
+}
+function setCallMode(mode){
+  document.body.classList.remove('listening-call','speaking-call');
+  if (mode === 'speaking'){
+    document.body.classList.add('talking','speaking-call');
+    $('#coreSub').textContent = 'Speaking';
+    clearSilence();
+  } else {
+    document.body.classList.add('talking','listening-call');
+    $('#coreSub').textContent = 'Listening';
+    armSilence();
+  }
+}
+
+function pauseWakeListen(){
+  holdForCall = true;
+  if (rec) try { rec.stop(); } catch(_){}
+  listening = false;
+}
+function resumeWakeListen(){
+  holdForCall = false;
+  if (wantListen && document.visibilityState === 'visible' && !talking) startListening({quiet:true});
+}
+
+async function startTalk(){
+  if (talking || elSession || startTalkBusy) return;
+  if (!booted){ pendingTalk = true; boot(); return; }
+  const Conv = window.ElevenLabsConversation;
+  if (!Conv || typeof Conv.startSession !== 'function'){
+    log('Voice SDK not ready yet', 'a');
+    setTimeout(() => { if (window.ElevenLabsConversation) startTalk(); }, 700);
+    return;
+  }
+  startTalkBusy = true;
+  pauseWakeListen();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  talking = true;
+  document.body.classList.add('talking','listening-call');
+  const btn = $('#bTalk'); if (btn) btn.classList.add('active');
+  $('#coreSub').textContent = 'Connecting';
+  chirp(1000, 2000, .1, .05);
+  log('Opening Jarvis voice channel…');
+  try {
+    elSession = await Conv.startSession({
+      agentId: AGENT_ID,
+      dynamicVariables: { time_of_day: timeOfDay(), briefing: briefingSpeechText() },
+      onConnect: () => { log('Jarvis voice channel open'); armSilence();
+        if (pendingBriefingRead){ tryAskRundown(); pendingBriefingRead = false; }
+      },
+      onDisconnect: () => { finishTalk(); },
+      onError: (err) => { console.error(err); log('Voice channel error', 'a'); },
+      onModeChange: (m) => {
+        const mode = (m && (m.mode || m)) || 'listening';
+        setCallMode(mode === 'speaking' ? 'speaking' : 'listening');
+      },
+      onMessage: (msg) => {
+        const text = msgText(msg), src = msgSource(msg);
+        if (text) log((src === 'agent' ? 'Agent: ' : 'User: ') + text.slice(0, 200));
+        if (src === 'speaking' || (typeof mode === 'string' && false)) {}
+        if (src === 'agent') clearSilence(); else armSilence();
+        if (src !== 'agent' && isGoodbye(text)) endTalk('goodbye');
+      }
+    });
+    setCallMode('listening');
+    armSilence();
+  } catch (err) {
+    console.error(err);
+    log('Could not start voice channel', 'a');
+    finishTalk();
+  } finally {
+    startTalkBusy = false;
+  }
+}
+
+function tryAskRundown(){
+  const s = elSession;
+  if (!s) return false;
+  const ask = 'Please give me the rundown of my briefing.';
+  for (const n of ['sendUserMessage','sendTextMessage','sendMessage']){
+    if (typeof s[n] === 'function'){ try { s[n](ask); return true; } catch(_){} }
+  }
+  return false;
+}
+
+async function endTalk(reason){
+  clearSilence();
+  const s = elSession;
+  elSession = null;
+  try { if (s && typeof s.endSession === 'function') await s.endSession(); } catch(_){}
+  finishTalk(reason);
+}
+
+function finishTalk(reason){
+  clearSilence();
+  elSession = null;
+  const was = talking;
+  talking = false;
+  startTalkBusy = false;
+  document.body.classList.remove('talking','listening-call','speaking-call');
+  const btn = $('#bTalk'); if (btn) btn.classList.remove('active');
+  $('#coreSub').textContent = booted ? 'Online' : 'Standby';
+  setWakeHint();
+  if (was) log('Jarvis voice channel closed' + (reason ? ' (' + reason + ')' : ''));
+  resumeWakeListen();
+}
+
+if ($('#bTalk')) $('#bTalk').addEventListener('click', () => startTalk());
+
+/* ---------- time helpers (Central) ---------- */
+function ctParts(d = new Date()){
+  const o = {};
+  new Intl.DateTimeFormat('en-US',{timeZone:TZ,hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+    .formatToParts(d).forEach(p => o[p.type] = p.value);
+  return o;
+}
+function ctHour(){ return parseInt(ctParts().hour,10) % 24; }
+function todayCT(){ const p = ctParts(); return new Date(Date.UTC(+p.year, +p.month-1, +p.day)); }
+function daysUntil(iso){ const [y,m,d] = iso.split('-').map(Number); return Math.round((Date.UTC(y,m-1,d) - todayCT())/86400000); }
+function fmtDue(iso){ const [y,m,d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y,m-1,d)).toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric'}); }
+function greeting(){ const h = ctHour(); return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+
+/* ---------- clock ---------- */
+function tick(){
+  const d = new Date();
+  const t = d.toLocaleTimeString('en-US',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hour12:true});
+  const [hm, ap] = t.split(' ');
+  const s = ctParts(d).second;
+  $('#clock').innerHTML = esc(hm) + '<small>:' + esc(s) + ' ' + esc(ap||'') + '</small>';
+  $('#date').textContent = d.toLocaleDateString('en-US',{timeZone:TZ,weekday:'long',month:'long',day:'numeric',year:'numeric'});
+}
+tick(); setInterval(tick, 1000);
+
+/* ---------- briefing render ---------- */
+function renderBrief(){
+  let h = '';
+  DATA.sections.forEach(sec => {
+    h += '<div class="sec ' + (sec.accent === 'amber' ? 'amber' : '') + '"><h4>' + esc(sec.title) + '</h4>';
+    sec.items.forEach(it => {
+      let due = '';
+      if (it.due){ const n = daysUntil(it.due); due = '<span class="due">' + esc(fmtDue(it.due)) + (n >= 0 ? ' · T-' + n + 'D' : ' · PAST') + '</span>'; }
+      h += '<div class="item"><span>' + esc(it.text) + '</span>' + due + '</div>';
+    });
+    h += '</div>';
+  });
+  $('#brief').innerHTML = h;
+  $('#phoneLine').textContent = '☎ ' + DATA.phoneAlerts;
+  $('#phoneTxt').textContent = DATA.phoneAlerts;
+  $('#briefUpd').textContent = 'UPD ' + DATA.updated;
+}
+renderBrief();
+
+function statusReportText(){
+  const parts = [greeting() + ', sir. Your status report.'];
+  DATA.sections.forEach(sec => {
+    if (!sec.items.length) return;
+    parts.push(sec.title.replace(/ - /g, ', ') + '.');
+    sec.items.forEach(it => {
+      let line = it.text;
+      if (it.due){ const n = daysUntil(it.due);
+        line += ' ' + fmtDue(it.due) + (n > 1 ? ', in ' + n + ' days' : n === 1 ? ', which is tomorrow' : n === 0 ? ', which is today' : ', which has passed'); }
+      parts.push(line + '.');
+    });
+  });
+  parts.push('As for telephone alerts, sir: ' + DATA.phoneAlerts.replace(/:/, ',') + '.');
+  parts.push('That is everything for now. Whenever you are ready, sir.');
+  return parts.join(' ');
+}
+
+function briefingSpeechText(){ return statusReportText(); }
+
+function itemDetail(it){
+  const bits = [];
+  bits.push('<p>' + esc(it.text) + '</p>');
+  if (it.due){
+    const n = daysUntil(it.due);
+    const when = n > 1 ? 'In ' + n + ' days' : n === 1 ? 'Tomorrow' : n === 0 ? 'Today' : 'This date has passed';
+    bits.push('<p>Due ' + esc(fmtDue(it.due)) + ' (' + esc(it.due) + '). ' + when + '.</p>');
+  }
+  Object.keys(it).forEach(k => {
+    if (k === 'text' || k === 'due') return;
+    bits.push('<p>' + esc(k) + ': ' + esc(String(it[k])) + '</p>');
+  });
+  if (!it.due && Object.keys(it).every(k => k === 'text')) bits.push('<p>No further details on file.</p>');
+  return bits.join('');
+}
+
+function renderBriefOverlay(){
+  let h = '';
+  DATA.sections.forEach(sec => {
+    h += '<div class="sec ' + (sec.accent === 'amber' ? 'amber' : '') + '"><h4>' + esc(sec.title) + '</h4>';
+    sec.items.forEach((it, i) => {
+      let due = '';
+      if (it.due){ const n = daysUntil(it.due); due = '<span class="due">' + esc(fmtDue(it.due)) + (n >= 0 ? ' · T-' + n + 'D' : ' · PAST') + '</span>'; }
+      h += '<div class="item" data-sec="' + esc(sec.title) + '" data-i="' + i + '"><span>' + esc(it.text) + '</span>' + due + '<div class="detail">' + itemDetail(it) + '</div></div>';
+    });
+    h += '</div>';
+  });
+  if (DATA.phoneAlerts) h += '<div class="phone">☎ ' + esc(DATA.phoneAlerts) + '</div>';
+  $('#briefBody').innerHTML = h;
+  $('#briefOverlayUpd').textContent = 'UPD ' + DATA.updated;
+  $('#briefBody').querySelectorAll('.item').forEach(el => {
+    el.addEventListener('click', ev => { ev.stopPropagation(); el.classList.toggle('open'); });
+  });
+}
+
+function openBriefing(){
+  if (!booted){ pendingBriefing = true; boot(); return; }
+  renderBriefOverlay();
+  const ov = $('#briefOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden', 'false');
+  if (/[?&]demo=briefing\b/.test(location.search)){
+    const first = $('#briefBody').querySelector('.item');
+    if (first) first.classList.add('open');
+  }
+  chirp(900, 1600, .08, .05);
+  log('Briefing overlay open');
+}
+
+function closeBriefing(){
+  const ov = $('#briefOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden', 'true');
+}
+
+function askAgentForBriefing(){ return tryAskRundown(); }
+
+function readBriefing(){
+  openBriefing();
+  const spoken = briefingSpeechText();
+  if (talking && elSession){
+    if (tryAskRundown()){ log('Briefing passed to Jarvis voice channel'); return; }
+    say(spoken, 'Briefing');
+    log('Briefing read with browser voice', 'a');
+    return;
+  }
+  if (window.ElevenLabsConversation){
+    pendingBriefingRead = true;
+    startTalk();
+    setTimeout(() => {
+      if (!pendingBriefingRead) return;
+      pendingBriefingRead = false;
+      say(spoken, 'Briefing');
+      log('Briefing read with browser voice', 'a');
+    }, 4000);
+    return;
+  }
+  say(spoken, 'Briefing');
+  log('Briefing read with browser voice');
+}
+
+/* ---------- logs (typed) ---------- */
+const logQ = []; let typing = false, logN = 0;
+function log(msg, cls){ logQ.push([msg, cls]); if (!typing) nextLog(); }
+function nextLog(){
+  const it = logQ.shift(); if (!it){ typing = false; return; }
+  typing = true;
+  const box = $('#logs'), row = document.createElement('div');
+  const ts = ctParts(); row.innerHTML = '<span class="t">[' + ts.hour + ':' + ts.minute + ':' + ts.second + ']</span> ';
+  const span = document.createElement('span'); if (it[1]) span.className = it[1]; row.appendChild(span); box.appendChild(row);
+  while (box.children.length > 60) box.removeChild(box.firstChild);
+  $('#logCount').textContent = String(++logN).padStart(2,'0');
+  let i = 0; const s = it[0].toUpperCase();
+  (function step(){ span.textContent = s.slice(0, ++i); if (i < s.length) setTimeout(step, 5); else setTimeout(nextLog, 60); })();
+}
+
+/* ---------- audio: synthesized chirps ---------- */
+function ac(){ if (!audioCtx){ const C = window.AudioContext || window.webkitAudioContext; if (C) audioCtx = new C(); } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); return audioCtx; }
+function chirp(f1 = 900, f2 = 1800, dur = .12, vol = .06, type = 'sine'){
+  const a = ac(); if (!a || muted) return;
+  const o = a.createOscillator(), g = a.createGain(), t = a.currentTime;
+  o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .015); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + .08);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + .1);
+}
+function bootSound(){
+  const a = ac(); if (!a || muted) return;
+  const t = a.currentTime, o = a.createOscillator(), g = a.createGain(), f = a.createBiquadFilter();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(60, t); o.frequency.exponentialRampToValueAtTime(420, t + 1.6);
+  f.type = 'lowpass'; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2400, t + 1.6);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(.05, t + .3); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.9);
+  o.connect(f).connect(g).connect(a.destination); o.start(t); o.stop(t + 2);
+  [0, .25, .5, 1.7].forEach((d, i) => setTimeout(() => chirp(700 + i*250, 1600 + i*300, .09, .05), d*1000));
+}
+
+/* ---------- speech synthesis ---------- */
+let voice = null, speaking = false;
+function pickVoice(){
+  if (!('speechSynthesis' in window)) return;
+  const vs = speechSynthesis.getVoices(); if (!vs.length) return;
+  const gb = vs.filter(v => /en[-_]GB/i.test(v.lang));
+  const male = /daniel|arthur|george|oliver|male|ryan|thomas|brian|harry|james|rishi|google uk english male/i;
+  voice = gb.find(v => male.test(v.name)) || gb.find(v => !/female|kate|serena|stephanie|martha|susan|libby|sonia|hazel|google uk english female/i.test(v.name))
+       || gb[0] || vs.find(v => /^en/i.test(v.lang) && male.test(v.name)) || vs.find(v => /^en/i.test(v.lang)) || null;
+  if (voice) log('Voice matrix: ' + voice.name + ' (' + voice.lang + ')');
+}
+if ('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function say(text, sub){
+  $('#coreSub').textContent = sub || 'Speaking';
+  log('JARVIS: ' + text.slice(0, 90) + (text.length > 90 ? '…' : ''), 'a');
+  if (muted || !('speechSynthesis' in window)){ setTimeout(() => $('#coreSub').textContent = 'Online', 1500); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if (voice){ u.voice = voice; u.lang = voice.lang; } else u.lang = 'en-GB';
+  u.rate = .95; u.pitch = .85;
+  u.onstart = () => { speaking = true; };
+  u.onend = u.onerror = () => { speaking = false; $('#coreSub').textContent = 'Online'; };
+  speechSynthesis.speak(u);
+}
+
+/* ---------- boot ---------- */
+const BOOT_LINES = ['Initializing core systems','Calibrating holographic projectors','Loading briefing matrix','Synchronizing chronometer: central time','Establishing secure uplink','All systems nominal'];
+function boot(){
+  if (booted) return; booted = true;
+  ac(); bootSound();
+  const bar = $('#bootBar'), fill = bar.querySelector('i'); bar.style.opacity = 1; $('#wake').style.display = 'none';
+  $('#reticle').classList.add('boot-fast');
+  let i = 0;
+  const iv = setInterval(() => {
+    $('#bootLine').textContent = '> ' + BOOT_LINES[i].toUpperCase();
+    fill.style.width = ((i+1)/BOOT_LINES.length*100) + '%';
+    log(BOOT_LINES[i]);
+    if (++i >= BOOT_LINES.length){
+      clearInterval(iv);
+      setTimeout(() => {
+        $('#boot').classList.add('hide');
+        $('#reticle').classList.remove('boot-fast');
+        document.body.classList.add('booted');
+        $('#coreSub').textContent = pendingTalk ? 'Connecting' : 'Online';
+        setWakeHint();
+        chirp(1200, 2400, .1, .05);
+        if (!pendingTalk) say(greeting() + ', sir. Welcome home, sir. All systems are online. Whenever you are ready, sir.', 'Online');
+        log('Briefing loaded: ' + DATA.sections.reduce((n,s) => n + s.items.length, 0) + ' items');
+        log(DATA.phoneAlerts, 'a');
+        if (!SR) log('Voice recognition unavailable in this browser');
+        if (/[?&]demo=talk\b/.test(location.search) || /[?&]demo=briefing\b/.test(location.search) || /[?&]demo=handsfree\b/.test(location.search)) $('#boot').style.display = 'none';
+        if (pendingTalk){ pendingTalk = false; setTimeout(startTalk, 900); }
+        if (pendingBriefing){ pendingBriefing = false; setTimeout(openBriefing, 500); }
+      }, 350);
+    }
+  }, 260);
+}
+$('#boot').addEventListener('click', e => { if (e.target && e.target.id === 'micEnable') return; boot(); });
+$('#bWake').addEventListener('click', () => { if (!booted){ pendingTalk = true; boot(); } else startTalk(); });
+
+/* ---------- holo desk (expanded panels) ---------- */
+function holoDesk(on){
+  document.body.classList.toggle('holo', on);
+  document.querySelectorAll('.panel:not(#toast)').forEach(p => { p.style.animation = 'none'; p.offsetHeight; p.style.animation = ''; });
+  chirp(500, 1500, .2, .06);
+}
+
+/* ---------- speech recognition ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, wantListen = false;
+function setMic(on, txt){ $('#micDot').classList.toggle('on', on); $('#micTxt').textContent = txt; $('#bMic').classList.toggle('active', on); }
+function startListening(opts){
+  const quiet = !!(opts && opts.quiet);
+  if (holdForCall || talking) return;
+  if (!SR){ if (!quiet) say('My apologies, sir. This browser does not support voice recognition. Chrome or Safari will serve you better.'); return; }
+  if (document.visibilityState !== 'visible') return;
+  if (!rec){
+    rec = new SR(); rec.lang = 'en-GB'; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++){
+        const said = e.results[i][0].transcript;
+        if (isWakePhrase(said) || e.results[i].isFinal) handleCommand(said, {interim:!e.results[i].isFinal});
+      }
+    };
+    rec.onend = () => {
+      listening = false;
+      if (wantListen && !holdForCall && !talking && document.visibilityState === 'visible'){
+        setTimeout(() => { try { rec.start(); listening = true; setMic(true, 'Voice: listening'); } catch(_){} }, 250);
+      } else if (!wantListen) setMic(false, 'Voice: standby');
+    };
+    rec.onerror = e => {
+      const err = e && e.error;
+      if (err === 'not-allowed' || err === 'service-not-allowed'){
+        wantListen = false; setMic(false,'Voice: blocked'); log('Microphone permission denied', 'a'); showMicEnable();
+        return;
+      }
+      listening = false;
+      if (wantListen && !holdForCall && !talking && document.visibilityState === 'visible'){
+        setTimeout(() => { try { rec.start(); listening = true; } catch(_){} }, err === 'no-speech' ? 80 : 400);
+      }
+    };
+  }
+  wantListen = true;
+  try { rec.start(); listening = true; } catch(_){}
+  setMic(true, 'Voice: listening');
+  if (!quiet) log('Voice recognition active');
+}
+function stopListening(){ wantListen = false; if (rec) try { rec.stop(); } catch(_){} setMic(false, 'Voice: standby'); log('Voice recognition paused'); }
+$('#bMic').addEventListener('click', () => { chirp(); wantListen ? stopListening() : startListening(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible'){ if (rec && listening) try { rec.stop(); } catch(_){} }
+  else if (wantListen && !holdForCall && !talking) startListening({quiet:true});
+});
+
+function handleCommand(raw, opts){
+  const c = raw.toLowerCase().trim();
+  if (!c) return;
+  const interim = !!(opts && opts.interim);
+  if (interim && !isWakePhrase(c) && !isGoodbye(c)) return;
+  if (!interim) log('Heard: "' + raw.trim() + '"');
+  if (talking && isGoodbye(c)) return endTalk('goodbye');
+  if (isWakePhrase(c)) return startTalk();
+  if (interim) return;
+  if (!booted) return;
+  if (/talk(?:\s+to(?:\s+me|\s+jarvis)?)?|speak(?:\s+to(?:\s+me|\s+jarvis)?)?|start (?:talking|conversation)/.test(c)) return startTalk();
+  if (/give me the rundown|the rundown|read (?:me )?(?:the |my )?briefing|\bbriefing\b/.test(c)){ openBriefing(); return readBriefing(); }
+  if (/status report|\breport\b/.test(c)) return statusReport();
+  if (/holo ?desk|holo deck|hollow desk|expand/.test(c)){
+    if (/deactivate|close|off|collapse/.test(c)){ holoDesk(false); return say('Understood, sir. Holo desk retracted.'); }
+    holoDesk(true); return say('Understood, sir. Holo desk activated.');
+  }
+  if (/time/.test(c)) return say('It is ' + new Date().toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'}) + ', sir.');
+  if (/thank/.test(c)) return say('Always a pleasure, sir.');
+  if (/hand|track/.test(c)) return toggleHands();
+  if (/sleep|stand ?by|goodnight|good night/.test(c)){ stopListening(); return say('Very good, sir. I shall be on standby.'); }
+  if (/hello|hey|jarvis/.test(c)) return say('At your service, sir.');
+  say('I am afraid I did not quite catch that, sir. Whenever you are ready, sir.');
+}
+function statusReport(){ chirp(800, 1600); document.body.classList.add('holo'); say(statusReportText(), 'Status report'); }
+$('#bBrief').addEventListener('click', () => { if (!booted) boot(); else statusReport(); });
+
+/* ---------- mute (uses confirm/cancel toast) ---------- */
+function confirmBox(msg, onOk){
+  $('#toastMsg').textContent = msg; const t = $('#toast'); t.classList.add('show');
+  const close = () => t.classList.remove('show');
+  $('#tOk').onclick = () => { close(); onOk(); }; $('#tNo').onclick = () => { close(); chirp(600, 300); };
+}
+$('#bMute').addEventListener('click', () => {
+  if (!muted) confirmBox('Silence Jarvis voice?', () => { muted = true; if ('speechSynthesis' in window) speechSynthesis.cancel(); $('#bMute').classList.add('active'); log('Audio muted'); });
+  else { muted = false; $('#bMute').classList.remove('active'); chirp(); say('Audio restored, sir.'); }
+});
+
+/* ---------- 3D parallax ---------- */
+const ui = $('#ui');
+function tilt(x, y){ // x,y in 0..1
+  if (matchMedia('(max-width:820px)').matches) return;
+  ui.style.transform = 'rotateY(' + ((x - .5) * 8).toFixed(2) + 'deg) rotateX(' + ((.5 - y) * 6).toFixed(2) + 'deg)';
+}
+addEventListener('pointermove', e => tilt(e.clientX / innerWidth, e.clientY / innerHeight));
+addEventListener('deviceorientation', e => { if (e.gamma != null && !matchMedia('(max-width:820px)').matches) tilt(.5 + e.gamma/90, .5 + (e.beta-45)/90); });
+
+/* ---------- voice waveform canvas ---------- */
+const wc = $('#wave'), wx = wc.getContext('2d');
+(function drawWave(t){
+  wx.clearRect(0,0,400,40); wx.strokeStyle = speaking ? '#FFB300' : 'rgba(0,255,255,.7)'; wx.lineWidth = 1.5; wx.beginPath();
+  const amp = speaking ? 14 : (listening ? 5 : 2);
+  for (let x = 0; x <= 400; x += 4){
+    const env = Math.sin(Math.PI * x / 400);
+    const y = 20 + env * amp * Math.sin(x*.06 + t*.008) * Math.sin(x*.013 + t*.003 + (speaking ? Math.random()*.6 : 0));
+    x ? wx.lineTo(x, y) : wx.moveTo(x, y);
+  }
+  wx.stroke(); requestAnimationFrame(drawWave);
+})(0);
+
+/* ---------- hand tracking (MediaPipe Tasks Vision via CDN) ---------- */
+let handsOn = false, stream = null, landmarker = null, rafId = 0, wasPinch = false, hoverEl = null;
+const cursor = $('#hand'), video = $('#cam');
+const sm = {x: innerWidth/2, y: innerHeight/2};
+async function toggleHands(){
+  chirp(500, 1200);
+  if (handsOn) return stopHands();
+  holoDesk(true);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ log('Camera unavailable; mouse control retained', 'a'); return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:640, height:480}, audio:false});
+    video.srcObject = stream; await video.play().catch(()=>{});
+    $('#camPanel').classList.add('on'); $('#bHolo').classList.add('active'); handsOn = true;
+    log('Optical sensor online');
+    say('Holo desk activated, sir. Pinch to select.');
+  } catch(e){ log('Camera permission declined; mouse control retained', 'a'); return; }
+  try {
+    log('Loading hand tracking module');
+    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+    const fs = await vision.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    landmarker = await vision.HandLandmarker.createFromOptions(fs, {
+      baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate:'GPU' },
+      runningMode:'VIDEO', numHands:1 });
+    if (!handsOn) return;
+    cursor.classList.add('on'); log('Hand tracking engaged'); loopHands();
+  } catch(e){ log('Hand tracking unavailable; mouse control retained', 'a'); }
+}
+function stopHands(){
+  handsOn = false; cancelAnimationFrame(rafId);
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  $('#camPanel').classList.remove('on'); $('#bHolo').classList.remove('active'); cursor.classList.remove('on','pinch');
+  holoDesk(false); log('Holo desk offline'); say('Holo desk retracted, sir.');
+}
+let lastVT = -1;
+function loopHands(){
+  if (!handsOn || !landmarker) return;
+  if (video.readyState >= 2 && video.currentTime !== lastVT){
+    lastVT = video.currentTime;
+    let r; try { r = landmarker.detectForVideo(video, performance.now()); } catch(_){ r = null; }
+    const lm = r && r.landmarks && r.landmarks[0];
+    if (lm){
+      const ix = lm[8], th = lm[4];
+      // mirror x; map central 70% of frame to full screen
+      const tx = (1 - (ix.x + th.x)/2 - .15) / .7, ty = ((ix.y + th.y)/2 - .15) / .7;
+      sm.x += (Math.min(1,Math.max(0,tx)) * innerWidth - sm.x) * .35;
+      sm.y += (Math.min(1,Math.max(0,ty)) * innerHeight - sm.y) * .35;
+      cursor.style.transform = 'translate(' + sm.x + 'px,' + sm.y + 'px)';
+      tilt(sm.x/innerWidth, sm.y/innerHeight);
+      const span = Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y) || .1;
+      const pinch = Math.hypot(ix.x - th.x, ix.y - th.y) / span < .35;
+      cursor.classList.toggle('pinch', pinch);
+      const el = document.elementFromPoint(sm.x, sm.y);
+      const btn = el && el.closest('button');
+      if (hoverEl && hoverEl !== btn) hoverEl.classList.remove('hover');
+      hoverEl = btn; if (btn) btn.classList.add('hover');
+      if (pinch && !wasPinch && el){ chirp(1400, 2000, .05); (btn || el).click(); }
+      wasPinch = pinch;
+    }
+  }
+  rafId = requestAnimationFrame(loopHands);
+}
+$('#bHolo').addEventListener('click', () => { if (!booted) boot(); toggleHands(); });
+
+/* keyboard shortcuts */
+$('#center').addEventListener('click', () => { if (booted) startTalk(); });
+$('#briefPanel').addEventListener('click', e => { e.preventDefault(); openBriefing(); });
+$('#briefRead').addEventListener('click', e => { e.stopPropagation(); readBriefing(); });
+$('#briefClose').addEventListener('click', e => { e.stopPropagation(); closeBriefing(); chirp(600, 300, .08, .04); });
+$('#briefOverlay').addEventListener('click', e => { if (e.target === $('#briefOverlay')) closeBriefing(); });
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#briefOverlay').classList.contains('show')){ e.preventDefault(); closeBriefing(); return; }
+  if (e.key === 'Enter' || e.key === ' '){ if (!booted){ e.preventDefault(); boot(); } }
+  else if (e.key.toLowerCase() === 'r' && booted && !$('#briefOverlay').classList.contains('show')) statusReport();
+  else if (e.key.toLowerCase() === 'v') $('#bMic').click();
+  else if (e.key.toLowerCase() === 't' && booted) startTalk();
+});
+
+function showMicEnable(){ const b = $('#micEnable'); if (b) b.classList.remove('off'); }
+function hideMicEnable(){ const b = $('#micEnable'); if (b) b.classList.add('off'); }
+
+async function enableMicrophone(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    log('Microphone API unavailable. Use Chrome or Edge on localhost or HTTPS.', 'a');
+    showMicEnable();
+    return false;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    stream.getTracks().forEach(t => t.stop());
+    hideMicEnable();
+    wantListen = true;
+    startListening({quiet:true});
+    setWakeHint();
+    log('Microphone ready. Listening for a wake phrase.');
+    return true;
+  } catch (err) {
+    console.error(err);
+    showMicEnable();
+    setMic(false, 'Voice: needs permission');
+    log('Tap the button to allow the microphone', 'a');
+    return false;
+  }
+}
+if ($('#micEnable')) $('#micEnable').addEventListener('click', e => { e.stopPropagation(); enableMicrophone(); });
+setWakeHint();
+enableMicrophone();
+
+log('Standby mode. Awaiting wake command.');
+// expose for testing / manual console use
+window.JARVIS = { boot, statusReport, handleCommand, startTalk, endTalk, openBriefing, readBriefing, closeBriefing, data: DATA, enableMicrophone };
+
+if (/[?&]demo=handsfree\b/.test(location.search)){
+  booted = true;
+  $('#boot').style.display = 'none';
+  document.body.classList.add('booted','listening-call');
+  setWakeHint();
+  $('#coreSub').textContent = 'Listening';
+  setMic(true, 'Voice: listening');
+  tick();
+}
+if (/[?&]demo=briefing\b/.test(location.search)){
+  pendingBriefing = true;
+  setTimeout(boot, 200);
+}
+if (/[?&]demo=talk\b/.test(location.search)){
+  pendingTalk = true;
+  setTimeout(boot, 200);
+}
+if (/[?&]probe=1\b/.test(location.search)){
+  setTimeout(() => {
+    const out = {
+      secure: window.isSecureContext,
+      protocol: location.protocol,
+      host: location.host,
+      mediaDevices: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      speechRecognition: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+      sdk: window.__jarvisSdk || document.documentElement.getAttribute('data-sdk') || 'pending',
+      Conversation: !!(window.ElevenLabsConversation && window.ElevenLabsConversation.startSession),
+      widgetEl: !!document.querySelector('elevenlabs-convai'),
+      wakeHint: (document.getElementById('wakeHint') || {}).textContent || '',
+      jsErrors: window.__jarvisErrors || []
+    };
+    const finish = () => {
+      document.documentElement.setAttribute('data-probe', JSON.stringify(out));
+      let el = document.getElementById('jarvisProbe');
+      if (!el){ el = document.createElement('pre'); el.id = 'jarvisProbe'; document.body.appendChild(el); }
+      el.textContent = JSON.stringify(out);
+    };
+    const mic = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+      ? navigator.mediaDevices.getUserMedia({audio:true}).then(s => { s.getTracks().forEach(t => t.stop()); out.mic = 'granted'; }).catch(e => { out.mic = (e && e.name ? e.name : 'Error') + ': ' + (e && e.message ? e.message : String(e)); })
+      : Promise.resolve().then(() => { out.mic = 'no mediaDevices'; });
+    const ws = new Promise(res => {
+      try {
+        const sock = new WebSocket('wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_4401m85c56k5e35sy9be3b0evc72');
+        const done = (v) => { out.ws = v; try { sock.close(); } catch(_){} res(); };
+        sock.onopen = () => done('open');
+        sock.onerror = () => done('error');
+        setTimeout(() => { if (!out.ws) done('timeout'); }, 3500);
+      } catch (e) { out.ws = 'exception: ' + (e && e.message ? e.message : String(e)); res(); }
+    });
+    Promise.all([mic, ws]).then(finish).catch(finish);
+  }, 400);
+}
+})();
+</script>
+
+<script type="module">
+try {
+  const mod = await import('https://esm.sh/@elevenlabs/client');
+  window.ElevenLabsConversation = mod.Conversation;
+  window.__jarvisSdk = 'ok';
+} catch (err) {
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@elevenlabs/client/+esm');
+    window.ElevenLabsConversation = mod.Conversation;
+    window.__jarvisSdk = 'ok';
+  } catch (err2) {
+    window.__jarvisSdk = 'fail';
+    console.error('ElevenLabs SDK failed to load', err2);
+  }
+}
+document.documentElement.setAttribute('data-sdk', window.__jarvisSdk || 'fail');
+window.dispatchEvent(new Event('elevenlabs-sdk-ready'));
+</script>
+</body>
+</html>
