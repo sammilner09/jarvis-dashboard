@@ -10,39 +10,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600&family=Rajdhani:wght@300;400;500;600&display=swap" rel="stylesheet">
 
 <!-- =====================================================================
-     BRIEFING DATA - edit this block to update what Jarvis shows and reads.
-     sections[].items[].text  = what appears on screen and is spoken.
-     sections[].items[].due   = optional ISO date (YYYY-MM-DD) for a countdown.
+     BRIEFING DATA - live BCI status from Automation Agent.
+     The dashboard loads https://xtjrnvdedaltwbbvqidr.supabase.co/functions/v1/jarvis-bci-feed
+     (read-only, no keys in this page) and replaces this block at runtime.
+     This block is only the offline fallback shown if the feed can't be reached.
      ===================================================================== -->
 <script type="application/json" id="briefing-data">
 {
-  "updated": "2026-11-23",
+  "updated": "connecting",
   "owner": "Sir",
   "sections": [
     {
-      "title": "Today",
-      "accent": "cyan",
-      "items": [
-        {
-          "text": "Morning briefing is ready when you are"
-        },
-        {
-          "text": "Sample reminder \u2014 replace this with your own items",
-          "due": "2026-12-15"
-        }
-      ]
-    },
-    {
-      "title": "Notices",
+      "title": "BCI - status",
       "accent": "amber",
       "items": [
         {
-          "text": "This dashboard is using placeholder sample text. Add your briefing items here."
+          "text": "Connecting to the BCI feed from Automation Agent"
         }
       ]
     }
   ],
-  "phoneAlerts": "Call line: setting up"
+  "phoneAlerts": "BCI sites: checking"
 }
 </script>
 
@@ -599,7 +587,11 @@ function renderBrief(){
 renderBrief();
 
 function statusReportText(){
-  const parts = [greeting() + ', sir. Your status report.'];
+  if (DATA.speech){
+    return greeting() + ', sir. Your BCI status report' + (DATA.live ? '' : ', from the last copy I have, as of ' + DATA.updated) + '. ' +
+      String(DATA.speech).replace(/^Here is the BCI status report\.\s*/, '') + ' That is everything for now. Whenever you are ready, sir.';
+  }
+  const parts = [greeting() + ', sir. Your BCI status report.'];
   DATA.sections.forEach(sec => {
     if (!sec.items.length) return;
     parts.push(sec.title.replace(/ - /g, ', ') + '.');
@@ -610,12 +602,59 @@ function statusReportText(){
       parts.push(line + '.');
     });
   });
-  parts.push('As for telephone alerts, sir: ' + DATA.phoneAlerts.replace(/:/, ',') + '.');
+  parts.push(DATA.phoneAlerts.replace(/:/, ',') + '.');
   parts.push('That is everything for now. Whenever you are ready, sir.');
   return parts.join(' ');
 }
 
 function briefingSpeechText(){ return statusReportText(); }
+
+/* ---------- live BCI feed (Automation Agent, read-only) ---------- */
+const FEED_URL = 'https://xtjrnvdedaltwbbvqidr.supabase.co/functions/v1/jarvis-bci-feed';
+const FEED_CACHE = 'jarvis.bciFeed.v1';
+const FEED_REFRESH_MS = 5 * 60 * 1000;
+function applyFeed(f, live){
+  if (!f || !Array.isArray(f.sections) || !f.sections.length) return false;
+  DATA.sections = f.sections.filter(sec => sec && Array.isArray(sec.items));
+  DATA.phoneAlerts = f.phoneAlerts || 'BCI sites: unknown';
+  DATA.speech = f.speech || '';
+  DATA.live = !!live;
+  const asOf = f.as_of_ct ? String(f.as_of_ct).replace(/^\w{3}, /, '') : (f.updated || '');
+  DATA.updated = (live ? '' : 'CACHED ') + asOf;
+  renderBrief();
+  if ($('#briefOverlay').classList.contains('show')) renderBriefOverlay();
+  return true;
+}
+function feedFallback(){
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(FEED_CACHE) || 'null'); } catch(_){}
+  if (cached && applyFeed(cached, false)){ log('BCI feed offline: showing last copy', 'a'); return; }
+  DATA.sections = [{ title: 'BCI - status', accent: 'amber', items: [{ text: 'BCI feed unavailable right now. Check ops.bcicapital.io', note: 'Jarvis will retry every 5 minutes.' }] }];
+  DATA.phoneAlerts = 'BCI sites: unknown (feed offline)';
+  DATA.speech = ''; DATA.live = false; DATA.updated = 'OFFLINE';
+  renderBrief();
+  if ($('#briefOverlay').classList.contains('show')) renderBriefOverlay();
+  log('BCI feed unavailable', 'a');
+}
+async function loadFeed(){
+  try {
+    const ctl = ('AbortController' in window) ? new AbortController() : null;
+    const to = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+    const r = await fetch(FEED_URL, { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+    if (to) clearTimeout(to);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const f = await r.json();
+    if (!applyFeed(f, true)) throw new Error('bad feed');
+    try { localStorage.setItem(FEED_CACHE, JSON.stringify(f)); } catch(_){}
+    log('BCI feed live: as of ' + (f.as_of_ct || f.updated || 'now'));
+  } catch (err) {
+    console.warn('BCI feed', err);
+    feedFallback();
+  }
+}
+loadFeed();
+setInterval(loadFeed, FEED_REFRESH_MS);
+
 
 function itemDetail(it){
   const bits = [];
